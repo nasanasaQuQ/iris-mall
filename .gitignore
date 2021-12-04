@@ -3,6 +3,7 @@
 *.swp
 .bashrc
 *.mod
+*.sum
 
 configuration.json
 configuration.prod.json
