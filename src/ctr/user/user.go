@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"example.com/m/v2/src/config"
 	"example.com/m/v2/src/ctr/common"
-	"example.com/m/v2/src/model/"
+	"example.com/m/v2/src/model"
+	"example.com/m/v2/src/utils"
 	"github.com/kataras/iris/v12"
 	"golang.org/x/tools/go/ssa/interp/testdata/src/fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func Login(ctx iris.Context) {
@@ -73,5 +75,131 @@ func Login(ctx iris.Context) {
 		"msg":    "success",
 		"data":   res,
 	})
+
+}
+
+func SetAppUserInfo(ctx iris.Context) {
+	errJson := common.ErrJson
+	type EncryptedUser struct {
+		EncryptedData string `json:"encryptedData"`
+		IV            string `json:"iv"`
+	}
+	var appUser EncryptedUser
+
+	if ctx.ReadJSON(&appUser) != nil {
+		errJson("参数错误", ctx)
+		return
+	}
+
+	sessions := model.MySession.Start(ctx)
+	sessionKey := sessions.GetString("appSessionKey")
+	if sessionKey == "" {
+		errJson("session err", ctx)
+		return
+	}
+
+	userInfoStr, err := utils.DecodeWeAppUserInfo(appUser.EncryptedData, sessionKey, appUser.IV)
+	if err != nil {
+		fmt.Println(err.Error())
+		errJson("err", ctx)
+		return
+	}
+
+	var user model.User
+	if err := json.Unmarshal([]byte(userInfoStr), &user); err != nil {
+		errJson("err", ctx)
+		return
+	}
+
+	sessions.Set("appUser", user)
+	ctx.JSON(iris.Map{
+		"status": iris.StatusOK,
+		"errNo":  model.ErrorCode.SUCCESS,
+		"msg":    "success",
+		"data":   iris.Map{},
+	})
+
+	return
+}
+
+func YesterdayRegisterUser(ctx iris.Context) {
+
+	var user model.User
+	count := user.YesterdayRegisterUser()
+	ctx.JSON(iris.Map{
+		"status": iris.StatusOK,
+		"errNo":  model.ErrorCode.SUCCESS,
+		"msg":    "success",
+		"data": iris.Map{
+			"count": count,
+		},
+	})
+	return
+
+}
+
+func TodayRegisterUser(ctx iris.Context) {
+	var users model.User
+	count := users.TodayRegisterUser()
+
+	ctx.JSON(iris.Map{
+		"status": iris.StatusOK,
+		"errNo":  model.ErrorCode.SUCCESS,
+		"msg":    "success",
+		"data": iris.Map{
+			"count": count,
+		},
+	})
+
+}
+
+func Latest30Day(ctx iris.Context) {
+	var users model.UserPerDay
+	result := users.Latest30Day()
+	var data iris.Map
+	if result != nil {
+		data = iris.Map{
+			"users": [0]int{},
+		}
+	} else {
+		data = iris.Map{
+			"users": result,
+		}
+	}
+	ctx.JSON(iris.Map{
+		"status": iris.StatusOK,
+		"errNo":  model.ErrorCode.SUCCESS,
+		"msg":    "success",
+		"data":   data,
+	})
+
+}
+
+func Analyze(ctx iris.Context) {
+	var user model.User
+	now := time.Now()
+	nowSec := now.Unix()
+	yesterdaySec := nowSec - 24*60*60
+	yesterday := time.Unix(yesterdaySec, 0)
+
+	yesterdayCount := user.PurchaseUserByDate(yesterday)
+	todayCount := user.PurchaseUserByDate(now)
+	yesterdayRegisterCount := user.YesterdayRegisterUser()
+	todayRegisterUser := user.TodayRegisterUser()
+
+	data := iris.Map{
+		"yesterdayCount":         yesterdayCount,
+		"todayCount":             todayCount,
+		"yesterdayRegisterCount": yesterdayRegisterCount,
+		"todayRegisterUser":      todayRegisterUser,
+	}
+
+	ctx.JSON(iris.Map{
+		"status": iris.StatusOK,
+		"errNo":  model.ErrorCode.SUCCESS,
+		"msg":    "success",
+		"data":   data,
+	})
+	return
 
 }
